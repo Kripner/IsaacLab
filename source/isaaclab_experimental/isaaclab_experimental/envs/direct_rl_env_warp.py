@@ -24,7 +24,10 @@ import warp as wp
 
 from isaaclab.envs.common import VecEnvObs, VecEnvStepReturn
 from isaaclab.envs.direct_rl_env_cfg import DirectRLEnvCfg
-from isaaclab.envs.ui import ViewportCameraController
+try:
+    from isaaclab.envs.ui import ViewportCameraController
+except ModuleNotFoundError:
+    ViewportCameraController = None
 from isaaclab.managers import EventManager
 from isaaclab.scene import InteractiveScene
 from isaaclab.sim import SimulationContext

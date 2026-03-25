@@ -14,7 +14,10 @@ from collections.abc import Sequence
 from typing import Any, ClassVar
 
 from isaaclab.managers import CommandManager, CurriculumManager, RewardManager, TerminationManager
-from isaaclab.ui.widgets import ManagerLiveVisualizer
+try:
+    from isaaclab.ui.widgets import ManagerLiveVisualizer
+except ModuleNotFoundError:
+    ManagerLiveVisualizer = None
 
 from .common import VecEnvStepReturn
 from .manager_based_env import ManagerBasedEnv

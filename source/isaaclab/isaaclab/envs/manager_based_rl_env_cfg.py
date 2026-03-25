@@ -8,7 +8,10 @@ from dataclasses import MISSING
 from isaaclab.utils import configclass
 
 from .manager_based_env_cfg import ManagerBasedEnvCfg
-from .ui import ManagerBasedRLEnvWindow
+try:
+    from .ui import ManagerBasedRLEnvWindow
+except ModuleNotFoundError:
+    ManagerBasedRLEnvWindow = None
 
 
 @configclass

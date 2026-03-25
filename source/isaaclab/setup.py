@@ -35,13 +35,11 @@ INSTALL_REQUIRES = [
     # image processing
     "transformers",
     "einops",  # needed for transformers, doesn't always auto-install
-    "warp-lang==1.11.0.dev20251205",
+    "warp-lang>=1.11.0",
     # make sure this is consistent with isaac sim version
     "pillow==11.2.1",
     # livestream
     "starlette==0.45.3",
-    # assets
-    "omniverseclient",
     # testing
     "pytest",
     "pytest-mock",
