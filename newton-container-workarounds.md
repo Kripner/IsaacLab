@@ -25,7 +25,10 @@ Export and convert to Singularity/Apptainer SIF:
 
 Run on HPC cluster:
 
-    apptainer exec --nv --no-home isaac-lab-newton.sif \
+    apptainer exec --nv --no-home \
+      --env WARP_CACHE_PATH=/tmp/warp_cache \
+      --env MPLCONFIGDIR=/tmp/matplotlib \
+      isaac-lab-newton.sif \
       python /workspace/isaaclab/scripts/reinforcement_learning/rsl_rl/train.py \
       --task Isaac-Cartpole-Direct-Warp-v0 --num_envs 4096 --headless
 
@@ -34,6 +37,8 @@ source tree over the one baked into the SIF:
 
     apptainer exec --nv --no-home \
       --bind ./source:/workspace/isaaclab/source \
+      --env WARP_CACHE_PATH=/tmp/warp_cache \
+      --env MPLCONFIGDIR=/tmp/matplotlib \
       isaac-lab-newton.sif \
       python /workspace/isaaclab/scripts/reinforcement_learning/rsl_rl/train.py \
       --task Isaac-Cartpole-Direct-Warp-v0 --num_envs 4096 --headless
@@ -55,11 +60,11 @@ actually imported anywhere in the source code (confirmed by grep). It causes
 
 | File | Old pin | New pin |
 |------|---------|---------|
-| `source/isaaclab/setup.py` | `warp-lang==1.11.0.dev20251205` | `warp-lang>=1.11.0` |
+| `source/isaaclab/setup.py` | `warp-lang==1.11.0.dev20251205` | `warp-lang>=1.11.0,<1.12.0` |
 | `source/isaaclab/setup.py` | `omniverseclient` | removed entirely |
 | `source/isaaclab_newton/setup.py` | `mujoco>=3.4.0.dev839962392` | `mujoco>=3.3.0` |
-| `source/isaaclab_experimental/setup.py` | `warp-lang>=1.9.0.dev20250825` | `warp-lang>=1.11.0` |
-| `source/isaaclab_tasks_experimental/setup.py` | `warp-lang>=1.9.0.dev20250825` | `warp-lang>=1.11.0` |
+| `source/isaaclab_experimental/setup.py` | `warp-lang>=1.9.0.dev20250825` | `warp-lang>=1.11.0,<1.12.0` |
+| `source/isaaclab_tasks_experimental/setup.py` | `warp-lang>=1.9.0.dev20250825` | `warp-lang>=1.11.0,<1.12.0` |
 
 
 ## 2. Dockerfile.newton -- new CUDA-only container
@@ -190,6 +195,47 @@ These classes are only used as default values in config dataclasses
 (e.g. `ui_window_class_type: type | None = BaseEnvWindow`) and for viewport
 camera control in the Omniverse rendering path. Setting them to `None` when
 `omni` is unavailable is safe -- the Newton code path never references them.
+
+
+## 6. warp-lang 1.12.0 incompatible with mujoco-warp
+
+### Issue
+
+The `mujoco-warp` commit pinned in `isaaclab_newton/setup.py` was developed
+against `warp-lang ~1.11.0`. When pip resolves `warp-lang>=1.11.0` it installs
+1.12.0, which has API changes that break mujoco-warp at runtime:
+
+    Could not find function wp.math.sqrt as a built-in
+
+This shows up during the first simulation step when mujoco-warp tries to
+compile its Warp kernels.
+
+### Solution
+
+Added an upper bound to the warp-lang pin in all three setup.py files:
+`warp-lang>=1.11.0,<1.12.0`. This resolves to 1.11.1 (latest compatible
+stable release).
+
+
+## 7. Apptainer runtime: Warp kernel cache and matplotlib
+
+### Issue
+
+When running with `--no-home`, Warp tries to create its kernel cache at
+`~/.cache/warp/` and matplotlib tries to create its config at
+`~/.config/matplotlib/`. Both fail because the home directory is not available.
+
+### Solution
+
+Set environment variables when launching the container:
+
+    apptainer exec --nv --no-home \
+      --env WARP_CACHE_PATH=/tmp/warp_cache \
+      --env MPLCONFIGDIR=/tmp/matplotlib \
+      ...
+
+These redirect the caches to `/tmp` which is always writable inside the
+container. This is a runtime concern, not a build-time fix.
 
 
 ## Summary of all changed files
