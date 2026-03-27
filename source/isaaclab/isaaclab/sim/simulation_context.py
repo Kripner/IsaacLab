@@ -782,7 +782,12 @@ class SimulationContext:
                     # Create default Rerun visualizer config
                     # Check for RERUN_RECORD_PATH env var to enable .rrd recording
                     record_path = os.environ.get("RERUN_RECORD_PATH")
-                    default_configs.append(RerunVisualizerCfg(record_to_rrd=record_path))
+                    # Enable historical data when recording so transforms are retained in .rrd
+                    keep_history = True if record_path else False
+                    default_configs.append(RerunVisualizerCfg(
+                        record_to_rrd=record_path,
+                        keep_historical_data=keep_history,
+                    ))
                 elif viz_type == "omniverse":
                     # Create default Omniverse visualizer config
                     default_configs.append(OVVisualizerCfg())
