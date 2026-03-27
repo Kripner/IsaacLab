@@ -780,7 +780,9 @@ class SimulationContext:
                     default_configs.append(NewtonVisualizerCfg())
                 elif viz_type == "rerun":
                     # Create default Rerun visualizer config
-                    default_configs.append(RerunVisualizerCfg())
+                    # Check for RERUN_RECORD_PATH env var to enable .rrd recording
+                    record_path = os.environ.get("RERUN_RECORD_PATH")
+                    default_configs.append(RerunVisualizerCfg(record_to_rrd=record_path))
                 elif viz_type == "omniverse":
                     # Create default Omniverse visualizer config
                     default_configs.append(OVVisualizerCfg())
