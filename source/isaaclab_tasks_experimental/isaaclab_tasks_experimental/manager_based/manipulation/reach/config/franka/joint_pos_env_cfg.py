@@ -29,8 +29,8 @@ class FrankaReachEnvCfg(ReachEnvCfg):
         dt=1 / 120,
         physics=NewtonCfg(
             solver_cfg=MJWarpSolverCfg(
-                njmax=20,
-                nconmax=20,
+                njmax=50,
+                nconmax=50,
                 ls_iterations=20,
                 cone="pyramidal",
                 impratio=1,
