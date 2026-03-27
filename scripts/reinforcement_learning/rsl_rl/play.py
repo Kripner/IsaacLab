@@ -34,6 +34,7 @@ parser.add_argument(
     help="Use the pre-trained checkpoint from Nucleus.",
 )
 parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
+parser.add_argument("--num_steps", type=int, default=0, help="Number of steps to run (0 = infinite).")
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -176,6 +177,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlBaseRun
     # reset environment
     obs = env.get_observations()
     timestep = 0
+    step_label = f"/{args_cli.num_steps}" if args_cli.num_steps > 0 else ""
+    print(f"[INFO]: Starting play loop{step_label}...")
     # simulate environment
     while is_simulation_running(simulation_app, env.unwrapped.sim):
         start_time = time.time()
@@ -185,17 +188,20 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlBaseRun
             actions = policy(obs)
             # env stepping
             obs, _, _, _ = env.step(actions)
-        if args_cli.video:
-            timestep += 1
-            # Exit the play loop after recording one video
-            if timestep == args_cli.video_length:
-                break
+        timestep += 1
+        if timestep % 100 == 0:
+            print(f"[INFO]: Step {timestep}{step_label} (sim time: {timestep * dt:.2f}s)")
+        if args_cli.video and timestep == args_cli.video_length:
+            break
+        if args_cli.num_steps > 0 and timestep >= args_cli.num_steps:
+            break
 
         # time delay for real-time evaluation
         sleep_time = dt - (time.time() - start_time)
         if args_cli.real_time and sleep_time > 0:
             time.sleep(sleep_time)
 
+    print(f"[INFO]: Play loop finished after {timestep} steps ({timestep * dt:.2f}s sim time)")
     # close the simulator
     env.close()
 
