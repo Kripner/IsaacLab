@@ -188,6 +188,27 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlBaseRun
             actions = policy(obs)
             # env stepping
             obs, _, _, _ = env.step(actions)
+
+        # Draw target markers in Newton viewer if available
+        raw_env = env.unwrapped
+        if hasattr(raw_env, 'command_manager'):
+            sim = raw_env.sim
+            for viz in sim._visualizers:
+                viewer = getattr(viz, '_viewer', None)
+                if viewer is not None and hasattr(viewer, 'log_points'):
+                    for term in raw_env.command_manager._terms.values():
+                        if hasattr(term, 'pose_command_w'):
+                            import warp as wp
+                            import numpy as _np
+
+                            target_pos = term.pose_command_w[:, :3]
+                            n = target_pos.shape[0]
+                            target_pos_wp = wp.from_torch(target_pos.contiguous(), dtype=wp.vec3)
+                            radii_wp = wp.full(n, 0.03, dtype=wp.float32, device=target_pos_wp.device)
+                            colors_np = _np.tile(_np.array([1.0, 0.2, 0.2], dtype=_np.float32), (n, 1))
+                            colors_wp = wp.array(colors_np, dtype=wp.vec3, device=target_pos_wp.device)
+                            viewer.log_points("targets", target_pos_wp, radii=radii_wp, colors=colors_wp)
+
         timestep += 1
         if timestep % 100 == 0:
             print(f"[INFO]: Step {timestep}{step_label} (sim time: {timestep * dt:.2f}s)")

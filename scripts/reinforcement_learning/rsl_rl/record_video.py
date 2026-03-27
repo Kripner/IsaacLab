@@ -45,6 +45,7 @@ import numpy as np
 import os
 import time
 import torch
+import warp as wp
 
 from rsl_rl.runners import OnPolicyRunner
 
@@ -123,6 +124,20 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlBaseRun
         state = NewtonManager.get_state_0()
         viewer.begin_frame(step * dt)
         viewer.log_state(state)
+
+        # Draw target markers if the env has a command manager with pose commands
+        raw_env = env.unwrapped
+        if hasattr(raw_env, 'command_manager'):
+            for term in raw_env.command_manager._terms.values():
+                if hasattr(term, 'pose_command_w'):
+                    target_pos = term.pose_command_w[:, :3]  # (num_envs, 3)
+                    n = target_pos.shape[0]
+                    target_pos_wp = wp.from_torch(target_pos.contiguous(), dtype=wp.vec3)
+                    radii_wp = wp.full(n, 0.03, dtype=wp.float32, device=target_pos_wp.device)
+                    colors_np = np.tile(np.array([1.0, 0.2, 0.2], dtype=np.float32), (n, 1))
+                    colors_wp = wp.array(colors_np, dtype=wp.vec3, device=target_pos_wp.device)
+                    viewer.log_points("targets", target_pos_wp, radii=radii_wp, colors=colors_wp)
+
         viewer.end_frame()
 
         frame_wp = viewer.get_frame()
