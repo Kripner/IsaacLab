@@ -19,8 +19,11 @@ parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--num_steps", type=int, default=500, help="Number of steps to record.")
 parser.add_argument("--output", type=str, default="policy_video.mp4", help="Output video file path.")
 parser.add_argument("--fps", type=int, default=30, help="Video frames per second.")
-parser.add_argument("--width", type=int, default=1280, help="Video width.")
-parser.add_argument("--height", type=int, default=720, help="Video height.")
+parser.add_argument("--width", type=int, default=1920, help="Video width.")
+parser.add_argument("--height", type=int, default=1080, help="Video height.")
+parser.add_argument("--cam_pos", type=float, nargs=3, default=None, help="Camera position (x y z).")
+parser.add_argument("--cam_pitch", type=float, default=None, help="Camera pitch in degrees.")
+parser.add_argument("--cam_yaw", type=float, default=None, help="Camera yaw in degrees.")
 parser.add_argument(
     "--agent", type=str, default="rsl_rl_cfg_entry_point", help="Name of the RL agent configuration entry point."
 )
@@ -30,7 +33,8 @@ AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
 
 # Force headless + newton visualizer
-args_cli.headless = True
+# Don't set headless -- it disables visualizers. The newton visualizer
+# will open a window but we only need it for get_frame() capture.
 args_cli.visualizer = ["newton"]
 
 sys.argv = [sys.argv[0]] + hydra_args
@@ -100,18 +104,33 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlBaseRun
     dt = env.unwrapped.step_dt
     obs = env.get_observations()
 
-    # Create a standalone Newton viewer for frame capture
-    from newton.viewer import ViewerGL
-    from isaaclab_newton.physics import NewtonManager
+    # Get the Newton viewer from the initialized visualizers
+    sim = env.unwrapped.sim
+    if not sim._visualizers:
+        sim.initialize_visualizers()
 
-    model = NewtonManager.get_model()
+    viewer = None
+    for v in sim._visualizers:
+        if hasattr(v, '_viewer') and v._viewer is not None:
+            viewer = v._viewer
+            break
 
-    viewer = ViewerGL(width=args_cli.width, height=args_cli.height, headless=True)
-    viewer.set_model(model)
+    if viewer is None or not hasattr(viewer, 'get_frame'):
+        print("[ERROR] Could not find Newton viewer. Visualizers:", sim._visualizers)
+        env.close()
+        return
 
-    print(f"[INFO]: Newton viewer created ({args_cli.width}x{args_cli.height}, headless)")
+    # Set camera position (use CLI args or defaults)
+    if args_cli.cam_pos is not None:
+        cam_pos = wp.vec3(*args_cli.cam_pos)
+        cam_pitch = args_cli.cam_pitch if args_cli.cam_pitch is not None else -2.8
+        cam_yaw = args_cli.cam_yaw if args_cli.cam_yaw is not None else -180.8
+        viewer.set_camera(pos=cam_pos, pitch=cam_pitch, yaw=cam_yaw)
+
+    print(f"[INFO]: Using initialized Newton viewer for frame capture")
 
     # Collect frames
+    raw_env = env.unwrapped
     frames = []
 
     print(f"[INFO]: Recording {args_cli.num_steps} steps to {args_cli.output}...")
@@ -120,25 +139,17 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlBaseRun
             actions = policy(obs)
             obs, _, _, _ = env.step(actions)
 
-        # Update viewer with current state and capture frame
-        state = NewtonManager.get_state_0()
-        viewer.begin_frame(step * dt)
-        viewer.log_state(state)
-
         # Draw target markers if the env has a command manager with pose commands
-        raw_env = env.unwrapped
         if hasattr(raw_env, 'command_manager'):
             for term in raw_env.command_manager._terms.values():
                 if hasattr(term, 'pose_command_w'):
-                    target_pos = term.pose_command_w[:, :3]  # (num_envs, 3)
+                    target_pos = term.pose_command_w[:, :3]
                     n = target_pos.shape[0]
                     target_pos_wp = wp.from_torch(target_pos.contiguous(), dtype=wp.vec3)
                     radii_wp = wp.full(n, 0.03, dtype=wp.float32, device=target_pos_wp.device)
                     colors_np = np.tile(np.array([1.0, 0.2, 0.2], dtype=np.float32), (n, 1))
                     colors_wp = wp.array(colors_np, dtype=wp.vec3, device=target_pos_wp.device)
                     viewer.log_points("targets", target_pos_wp, radii=radii_wp, colors=colors_wp)
-
-        viewer.end_frame()
 
         frame_wp = viewer.get_frame()
         if frame_wp is not None:
