@@ -24,6 +24,7 @@ parser.add_argument("--height", type=int, default=1080, help="Video height.")
 parser.add_argument("--cam_pos", type=float, nargs=3, default=None, help="Camera position (x y z).")
 parser.add_argument("--cam_pitch", type=float, default=None, help="Camera pitch in degrees.")
 parser.add_argument("--cam_yaw", type=float, default=None, help="Camera yaw in degrees.")
+parser.add_argument("--cam_fov", type=float, default=None, help="Camera field of view in degrees.")
 parser.add_argument(
     "--agent", type=str, default="rsl_rl_cfg_entry_point", help="Name of the RL agent configuration entry point."
 )
@@ -120,12 +121,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlBaseRun
         env.close()
         return
 
-    # Set camera position (use CLI args or defaults)
+    # Set camera position and FOV (use CLI args if provided)
     if args_cli.cam_pos is not None:
         cam_pos = wp.vec3(*args_cli.cam_pos)
         cam_pitch = args_cli.cam_pitch if args_cli.cam_pitch is not None else -2.8
         cam_yaw = args_cli.cam_yaw if args_cli.cam_yaw is not None else -180.8
         viewer.set_camera(pos=cam_pos, pitch=cam_pitch, yaw=cam_yaw)
+    if args_cli.cam_fov is not None:
+        viewer.camera.fov = args_cli.cam_fov
 
     print(f"[INFO]: Using initialized Newton viewer for frame capture")
 
