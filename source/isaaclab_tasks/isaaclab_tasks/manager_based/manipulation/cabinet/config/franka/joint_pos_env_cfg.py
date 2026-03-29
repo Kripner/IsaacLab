@@ -28,8 +28,8 @@ class FrankaCabinetEnvCfg(CabinetEnvCfg):
     sim: SimulationCfg = SimulationCfg(
         physics=NewtonCfg(
             solver_cfg=MJWarpSolverCfg(
-                njmax=90,
-                nconmax=100,
+                njmax=150,
+                nconmax=150,
                 ls_iterations=20,
                 cone="pyramidal",
                 impratio=1,
