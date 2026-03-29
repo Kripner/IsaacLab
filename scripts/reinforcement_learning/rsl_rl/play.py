@@ -201,17 +201,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlBaseRun
                             import warp as wp
                             import numpy as _np
 
-                            # Green sphere: current EE position
-                            body_idx = term.body_idx
-                            ee_pos = wp.to_torch(term.robot.data.body_link_pose_w)[:, body_idx[0], :3]
-                            n = ee_pos.shape[0]
-                            ee_wp = wp.from_torch(ee_pos.contiguous(), dtype=wp.vec3)
-                            ee_radii = wp.full(n, 0.02, dtype=wp.float32, device=ee_wp.device)
-                            ee_colors = wp.array(_np.tile(_np.array([0.2, 1.0, 0.2], dtype=_np.float32), (n, 1)), dtype=wp.vec3, device=ee_wp.device)
-                            viewer.log_points("ee_pos", ee_wp, radii=ee_radii, colors=ee_colors)
-
-                            # Red sphere: target position
                             target_pos = term.pose_command_w[:, :3]
+                            n = target_pos.shape[0]
                             target_pos_wp = wp.from_torch(target_pos.contiguous(), dtype=wp.vec3)
                             radii_wp = wp.full(n, 0.03, dtype=wp.float32, device=target_pos_wp.device)
                             colors_np = _np.tile(_np.array([1.0, 0.2, 0.2], dtype=_np.float32), (n, 1))

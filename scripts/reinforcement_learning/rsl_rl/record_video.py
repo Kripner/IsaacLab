@@ -142,20 +142,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlBaseRun
             actions = policy(obs)
             obs, _, _, _ = env.step(actions)
 
-        # Draw target markers and end-effector markers
+        # Draw target markers
         if hasattr(raw_env, 'command_manager'):
             for term in raw_env.command_manager._terms.values():
                 if hasattr(term, 'pose_command_w'):
-                    # Show target at the EE body position (where the policy is tracking)
-                    body_idx = term.body_idx
-                    ee_pos = wp.to_torch(term.robot.data.body_link_pose_w)[:, body_idx[0], :3]
-                    n_ee = ee_pos.shape[0]
-                    ee_wp = wp.from_torch(ee_pos.contiguous(), dtype=wp.vec3)
-                    ee_radii = wp.full(n_ee, 0.02, dtype=wp.float32, device=ee_wp.device)
-                    ee_colors = wp.array(np.tile(np.array([0.2, 1.0, 0.2], dtype=np.float32), (n_ee, 1)), dtype=wp.vec3, device=ee_wp.device)
-                    viewer.log_points("ee_pos", ee_wp, radii=ee_radii, colors=ee_colors)
-
-                    # Show command target
                     target_pos = term.pose_command_w[:, :3]
                     n = target_pos.shape[0]
                     target_pos_wp = wp.from_torch(target_pos.contiguous(), dtype=wp.vec3)
