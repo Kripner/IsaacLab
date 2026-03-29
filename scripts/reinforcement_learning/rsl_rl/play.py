@@ -200,10 +200,17 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlBaseRun
                         if hasattr(term, 'pose_command_w'):
                             import warp as wp
                             import numpy as _np
+                            from isaaclab.utils.math import quat_apply
 
                             target_pos = term.pose_command_w[:, :3]
-                            n = target_pos.shape[0]
-                            target_pos_wp = wp.from_torch(target_pos.contiguous(), dtype=wp.vec3)
+                            target_quat = term.pose_command_w[:, 3:]
+
+                            # Offset along target's local z-axis to fingertip (~0.1m from panda_hand)
+                            local_offset = torch.tensor([0.0, 0.0, 0.1], device=target_pos.device).expand_as(target_pos)
+                            fingertip_pos = target_pos + quat_apply(target_quat, local_offset)
+
+                            n = fingertip_pos.shape[0]
+                            target_pos_wp = wp.from_torch(fingertip_pos.contiguous(), dtype=wp.vec3)
                             radii_wp = wp.full(n, 0.03, dtype=wp.float32, device=target_pos_wp.device)
                             colors_np = _np.tile(_np.array([1.0, 0.2, 0.2], dtype=_np.float32), (n, 1))
                             colors_wp = wp.array(colors_np, dtype=wp.vec3, device=target_pos_wp.device)
