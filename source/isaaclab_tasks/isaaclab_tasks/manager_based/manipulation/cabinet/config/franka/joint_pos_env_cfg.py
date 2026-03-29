@@ -30,7 +30,7 @@ class FrankaCabinetEnvCfg(CabinetEnvCfg):
             solver_cfg=MJWarpSolverCfg(
                 njmax=150,
                 nconmax=150,
-                ccd_iterations=200,
+                ccd_iterations=500,
                 ls_iterations=20,
                 cone="pyramidal",
                 impratio=1,
