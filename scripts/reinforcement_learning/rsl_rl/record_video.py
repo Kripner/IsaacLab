@@ -25,6 +25,7 @@ parser.add_argument("--cam_pos", type=float, nargs=3, default=None, help="Camera
 parser.add_argument("--cam_pitch", type=float, default=None, help="Camera pitch in degrees.")
 parser.add_argument("--cam_yaw", type=float, default=None, help="Camera yaw in degrees.")
 parser.add_argument("--cam_fov", type=float, default=None, help="Camera field of view in degrees.")
+parser.add_argument("--resample_time", type=float, default=None, help="Time between target changes (seconds).")
 parser.add_argument(
     "--agent", type=str, default="rsl_rl_cfg_entry_point", help="Name of the RL agent configuration entry point."
 )
@@ -82,6 +83,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlBaseRun
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
     env_cfg.seed = agent_cfg.seed
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+
+    # Override command resampling time if requested
+    if args_cli.resample_time is not None and hasattr(env_cfg, 'commands'):
+        for cmd_name in dir(env_cfg.commands):
+            cmd = getattr(env_cfg.commands, cmd_name, None)
+            if hasattr(cmd, 'resampling_time_range'):
+                cmd.resampling_time_range = (args_cli.resample_time, args_cli.resample_time)
 
     log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)
     log_root_path = os.path.abspath(log_root_path)
@@ -142,13 +150,22 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg, agent_cfg: RslRlBaseRun
             actions = policy(obs)
             obs, _, _, _ = env.step(actions)
 
-        # Draw target markers
+        # Draw target markers at fingertip position (offset from panda_hand along target orientation)
         if hasattr(raw_env, 'command_manager'):
             for term in raw_env.command_manager._terms.values():
                 if hasattr(term, 'pose_command_w'):
-                    target_pos = term.pose_command_w[:, :3]
-                    n = target_pos.shape[0]
-                    target_pos_wp = wp.from_torch(target_pos.contiguous(), dtype=wp.vec3)
+                    target_pos = term.pose_command_w[:, :3]  # (n, 3)
+                    target_quat = term.pose_command_w[:, 3:]  # (n, 4) as xyzw or wxyz
+
+                    # Offset along the target's local z-axis by wrist-to-fingertip distance
+                    # panda_hand z-axis points along the fingers; offset ~0.1m to reach fingertip
+                    from isaaclab.utils.math import quat_apply
+                    local_offset = torch.tensor([0.0, 0.0, 0.1], device=target_pos.device).expand_as(target_pos)
+                    world_offset = quat_apply(target_quat, local_offset)
+                    fingertip_pos = target_pos + world_offset
+
+                    n = fingertip_pos.shape[0]
+                    target_pos_wp = wp.from_torch(fingertip_pos.contiguous(), dtype=wp.vec3)
                     radii_wp = wp.full(n, 0.03, dtype=wp.float32, device=target_pos_wp.device)
                     colors_np = np.tile(np.array([1.0, 0.2, 0.2], dtype=np.float32), (n, 1))
                     colors_wp = wp.array(colors_np, dtype=wp.vec3, device=target_pos_wp.device)
