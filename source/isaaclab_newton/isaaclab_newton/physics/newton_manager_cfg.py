@@ -101,6 +101,10 @@ class MJWarpSolverCfg(NewtonSolverCfg):
     use_mujoco_contacts: bool = True
     """Whether to use MuJoCo's contact solver."""
 
+    ccd_iterations: int = 100
+    """Number of continuous collision detection iterations. Default MuJoCo value is 35,
+    which overflows for complex scenes like Franka + cabinet."""
+
 
 @configclass
 class XPBDSolverCfg(NewtonSolverCfg):
