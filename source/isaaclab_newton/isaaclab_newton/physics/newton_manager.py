@@ -449,15 +449,19 @@ class NewtonManager(PhysicsManager):
         stage = get_current_stage()
         up_axis = UsdGeom.GetStageUpAxis(stage)
 
-        # Scan /World children for env-like Xforms (Env_0, env_1, ...)
+        # Scan for env-like Xforms (Env_0, env_1, ...)
+        # Check both /World/Env_* (legacy) and /World/envs/env_* (InteractiveScene)
         env_pattern = re.compile(r"^[Ee]nv_(\d+)$")
-        world_prim = stage.GetPrimAtPath("/World")
         env_paths: list[tuple[int, str]] = []
-        if world_prim and world_prim.IsValid():
-            for child in world_prim.GetChildren():
-                m = env_pattern.match(child.GetName())
-                if m:
-                    env_paths.append((int(m.group(1)), child.GetPath().pathString))
+        for parent_path in ["/World", "/World/envs"]:
+            parent_prim = stage.GetPrimAtPath(parent_path)
+            if parent_prim and parent_prim.IsValid():
+                for child in parent_prim.GetChildren():
+                    m = env_pattern.match(child.GetName())
+                    if m:
+                        env_paths.append((int(m.group(1)), child.GetPath().pathString))
+            if env_paths:
+                break
         env_paths.sort(key=lambda x: x[0])
 
         builder = ModelBuilder(up_axis=up_axis)
@@ -481,21 +485,39 @@ class NewtonManager(PhysicsManager):
                 schema_resolvers=schema_resolvers,
             )
 
-            # Add each env as a separate Newton world
+            # Compute env_0's world transform to use as delta reference.
             xform_cache = UsdGeom.XformCache()
+            proto_world = xform_cache.GetLocalToWorldTransform(stage.GetPrimAtPath(proto_path))
+            proto_t = proto_world.ExtractTranslation()
+            proto_r = proto_world.ExtractRotationQuat()
+            proto_pos = (proto_t[0], proto_t[1], proto_t[2])
+            proto_quat = (
+                proto_r.GetImaginary()[0],
+                proto_r.GetImaginary()[1],
+                proto_r.GetImaginary()[2],
+                proto_r.GetReal(),
+            )
+            proto_tf = wp.transform(proto_pos, proto_quat)
+            proto_tf_inv = wp.transform_inverse(proto_tf)
+
+            # Add each env as a separate Newton world.
+            # The prototype has env_0's world-space positions baked in,
+            # so apply a delta transform from env_0 to env_N for each world.
             for _, env_path in env_paths:
-                builder.begin_world()
-                world_xform = xform_cache.GetLocalToWorldTransform(stage.GetPrimAtPath(env_path))
-                translation = world_xform.ExtractTranslation()
-                rotation = world_xform.ExtractRotationQuat()
-                pos = (translation[0], translation[1], translation[2])
-                quat = (
-                    rotation.GetImaginary()[0],
-                    rotation.GetImaginary()[1],
-                    rotation.GetImaginary()[2],
-                    rotation.GetReal(),
+                env_world = xform_cache.GetLocalToWorldTransform(stage.GetPrimAtPath(env_path))
+                env_t = env_world.ExtractTranslation()
+                env_r = env_world.ExtractRotationQuat()
+                env_pos = (env_t[0], env_t[1], env_t[2])
+                env_quat = (
+                    env_r.GetImaginary()[0],
+                    env_r.GetImaginary()[1],
+                    env_r.GetImaginary()[2],
+                    env_r.GetReal(),
                 )
-                builder.add_builder(proto, xform=wp.transform(pos, quat))
+                env_tf = wp.transform(env_pos, env_quat)
+                delta_tf = wp.transform_multiply(env_tf, proto_tf_inv)
+                builder.begin_world()
+                builder.add_builder(proto, xform=delta_tf)
                 builder.end_world()
 
             cls._num_envs = len(env_paths)

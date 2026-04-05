@@ -73,8 +73,9 @@ class FrankaCubeStackEnvCfg(StackEnvCfg):
         self.scene.robot = FRANKA_PANDA_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.scene.robot.spawn.semantic_tags = [("class", "robot")]
 
-        # Add semantics to table
-        self.scene.table.spawn.semantic_tags = [("class", "table")]
+        # Add semantics to table (only when not using PresetCfg wrapper)
+        if hasattr(self.scene.table, "spawn"):
+            self.scene.table.spawn.semantic_tags = [("class", "table")]
 
         # Add semantics to ground
         self.scene.plane.semantic_tags = [("class", "ground")]
