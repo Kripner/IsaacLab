@@ -61,7 +61,7 @@ class LiftPhysicsCfg(PresetCfg):
             iterations=200,
             ls_iterations=100,
         ),
-        num_substeps=4,
+        num_substeps=2,
         debug_mode=False,
     )
 
