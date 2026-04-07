@@ -552,21 +552,30 @@ class NewtonManager(PhysicsManager):
 
     @classmethod
     def _fix_zero_mass_moving_bodies(cls) -> None:
-        """Set a tiny mass on moving bodies that have zero mass authored.
+        """Compute physical mass for moving bodies with zero/negative mass authored.
 
-        Some USD assets (e.g. OpenArm hand link) have zero mass on intermediate
-        bodies. Newton's :attr:`~newton.ModelBuilder.bound_mass` validator only
-        floors *positive* masses below the bound -- zero is treated as "static
-        body". The MuJoCo solver requires positive mass for any body with a
-        non-fixed joint, so we explicitly fix those here before finalize.
+        Some USD assets (e.g. Franka panda finger, OpenArm hand link) have
+        invalid mass on intermediate bodies because the asset relies on
+        Isaac Sim's "auto-compute mass from collider" PhysX feature, which
+        Newton's USD importer doesn't replicate.
+
+        Newton's :attr:`~newton.ModelBuilder.bound_mass` validator only floors
+        *positive* masses below the bound -- zero/negative is treated as
+        "static body". The MuJoCo solver requires positive mass for any body
+        with a non-fixed joint.
+
+        We compute a reasonable mass from the body's collision shapes using
+        a default density of 1000 kg/m^3 (water/light plastic). For bodies
+        without any collision shape we fall back to a small default.
         """
         from newton import JointType
+        from newton._src.geometry.inertia import compute_inertia_shape
 
         builder = cls._builder
         if builder is None or len(builder.body_mass) == 0:
             return
 
-        # Identify bodies that have a non-fixed joint as parent (i.e. moving bodies).
+        # Identify bodies that have a non-fixed joint as parent (moving bodies).
         moving_bodies: set[int] = set()
         for j in range(len(builder.joint_type)):
             if builder.joint_type[j] == JointType.FIXED:
@@ -575,28 +584,61 @@ class NewtonManager(PhysicsManager):
             if child >= 0:
                 moving_bodies.add(child)
 
-        epsilon_mass = 1e-6
-        epsilon_inertia = 1e-9
+        # Default density for shape-based mass computation [kg/m^3].
+        default_density = 1000.0
+        # Fallback mass and inertia for bodies without any usable shape.
+        fallback_mass = 0.01
+        fallback_inertia_scalar = 1e-5
+
         num_fixed = 0
         for b in moving_bodies:
-            if builder.body_mass[b] <= 0.0:
-                builder.body_mass[b] = epsilon_mass
-                builder.body_inv_mass[b] = 1.0 / epsilon_mass
-                builder.body_inertia[b] = wp.mat33(
-                    epsilon_inertia, 0.0, 0.0,
-                    0.0, epsilon_inertia, 0.0,
-                    0.0, 0.0, epsilon_inertia,
+            if builder.body_mass[b] > 0.0:
+                continue
+
+            # Try to compute mass from the body's collision shapes.
+            total_mass = 0.0
+            total_inertia = wp.mat33(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+            shape_indices = builder.body_shapes.get(b, [])
+            for s in shape_indices:
+                shape_type = builder.shape_type[s]
+                shape_scale = builder.shape_scale[s]
+                shape_src = builder.shape_source[s] if hasattr(builder, "shape_source") else None
+                try:
+                    m, _com, I = compute_inertia_shape(
+                        type=shape_type,
+                        scale=shape_scale,
+                        src=shape_src,
+                        density=default_density,
+                    )
+                except Exception:
+                    continue
+                if m > 0.0:
+                    total_mass += m
+                    for i in range(3):
+                        for j_ in range(3):
+                            total_inertia[i, j_] = total_inertia[i, j_] + I[i, j_]
+
+            if total_mass <= 0.0:
+                # No valid shape -- use fallback values.
+                total_mass = fallback_mass
+                total_inertia = wp.mat33(
+                    fallback_inertia_scalar, 0.0, 0.0,
+                    0.0, fallback_inertia_scalar, 0.0,
+                    0.0, 0.0, fallback_inertia_scalar,
                 )
-                builder.body_inv_inertia[b] = wp.mat33(
-                    1.0 / epsilon_inertia, 0.0, 0.0,
-                    0.0, 1.0 / epsilon_inertia, 0.0,
-                    0.0, 0.0, 1.0 / epsilon_inertia,
-                )
-                num_fixed += 1
+
+            builder.body_mass[b] = total_mass
+            builder.body_inv_mass[b] = 1.0 / total_mass
+            builder.body_inertia[b] = total_inertia
+            builder.body_inv_inertia[b] = wp.inverse(total_inertia)
+            num_fixed += 1
+
         if num_fixed > 0:
             logger.warning(
-                f"Set tiny mass ({epsilon_mass}) on {num_fixed} zero-mass moving body(ies). "
-                f"This is required for the MuJoCo solver."
+                f"Computed mass from collision shapes (density={default_density} kg/m^3) "
+                f"for {num_fixed} zero-mass moving body(ies). "
+                f"Newton's USD importer does not auto-compute mass from colliders "
+                f"the way Isaac Sim PhysX does."
             )
 
     @classmethod
