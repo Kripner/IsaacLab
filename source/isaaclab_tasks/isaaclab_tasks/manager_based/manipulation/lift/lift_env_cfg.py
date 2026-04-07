@@ -5,6 +5,7 @@
 
 from dataclasses import MISSING
 
+from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg
 from isaaclab_physx.assets import DeformableObjectCfg
 from isaaclab_physx.physics import PhysxCfg
 
@@ -20,11 +21,62 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import FrameTransformerCfg
+from isaaclab.sim import CollisionPropertiesCfg, RigidBodyPropertiesCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
+from isaaclab_tasks.utils import PresetCfg
+
 from . import mdp
+
+
+@configclass
+class LiftPhysicsCfg(PresetCfg):
+    default: PhysxCfg = PhysxCfg(
+        bounce_threshold_velocity=0.01,
+        gpu_found_lost_aggregate_pairs_capacity=1024 * 1024 * 4,
+        gpu_total_aggregate_pairs_capacity=16 * 1024,
+        friction_correlation_distance=0.00625,
+    )
+    physx: PhysxCfg = PhysxCfg(
+        bounce_threshold_velocity=0.01,
+        gpu_found_lost_aggregate_pairs_capacity=1024 * 1024 * 4,
+        gpu_total_aggregate_pairs_capacity=16 * 1024,
+        friction_correlation_distance=0.00625,
+    )
+    newton: NewtonCfg = NewtonCfg(
+        solver_cfg=MJWarpSolverCfg(
+            njmax=100,
+            nconmax=100,
+            cone="pyramidal",
+            integrator="implicitfast",
+            impratio=1,
+        ),
+        num_substeps=1,
+        debug_mode=False,
+    )
+
+
+@configclass
+class LiftTableCfg(PresetCfg):
+    physx = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Table",
+        init_state=AssetBaseCfg.InitialStateCfg(pos=[0.5, 0, 0], rot=[0, 0, 0.707, 0.707]),
+        spawn=UsdFileCfg(usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"),
+    )
+    newton = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/Table",
+        init_state=RigidObjectCfg.InitialStateCfg(
+            pos=(0.5, 0.15, -0.5), rot=(0, 0, 0.707, 0.707),
+        ),
+        spawn=sim_utils.CuboidCfg(
+            size=(0.9, 1.3, 1.00),
+            collision_props=CollisionPropertiesCfg(),
+            rigid_props=RigidBodyPropertiesCfg(rigid_body_enabled=True, kinematic_enabled=True),
+        ),
+    )
+    default = physx
 
 ##
 # Scene definition
@@ -46,11 +98,7 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     object: RigidObjectCfg | DeformableObjectCfg = MISSING
 
     # Table
-    table = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Table",
-        init_state=AssetBaseCfg.InitialStateCfg(pos=[0.5, 0, 0], rot=[0, 0, 0.707, 0.707]),
-        spawn=UsdFileCfg(usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"),
-    )
+    table = LiftTableCfg()
 
     # plane
     plane = AssetBaseCfg(
@@ -218,9 +266,4 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 0.01  # 100Hz
         self.sim.render_interval = self.decimation
 
-        self.sim.physics = PhysxCfg(
-            bounce_threshold_velocity=0.01,
-            gpu_found_lost_aggregate_pairs_capacity=1024 * 1024 * 4,
-            gpu_total_aggregate_pairs_capacity=16 * 1024,
-            friction_correlation_distance=0.00625,
-        )
+        self.sim.physics = LiftPhysicsCfg()

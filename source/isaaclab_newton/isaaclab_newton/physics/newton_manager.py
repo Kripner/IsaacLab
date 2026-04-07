@@ -417,6 +417,12 @@ class NewtonManager(PhysicsManager):
         device = PhysicsManager._device
         logger.info(f"Finalizing model on device: {device}")
         cls._builder.up_axis = Axis.from_string(cls._up_axis)
+        # The MuJoCo solver requires moving bodies (those with joints) to have
+        # positive mass. Some USD assets (e.g. OpenArm hand link) have zero mass
+        # authored. Newton's bound_mass only floors positive masses, so we
+        # explicitly fix zero-mass bodies that are referenced as a child of any
+        # non-fixed joint here, before finalize.
+        cls._fix_zero_mass_moving_bodies()
         # Set smaller contact margin for manipulation examples (default 10cm is too large)
         with Timer(name="newton_finalize_builder", msg="Finalize builder took:"):
             cls._model = cls._builder.finalize(device=device)
@@ -543,6 +549,55 @@ class NewtonManager(PhysicsManager):
             cls._num_envs = len(env_paths)
 
         cls.set_builder(builder)
+
+    @classmethod
+    def _fix_zero_mass_moving_bodies(cls) -> None:
+        """Set a tiny mass on moving bodies that have zero mass authored.
+
+        Some USD assets (e.g. OpenArm hand link) have zero mass on intermediate
+        bodies. Newton's :attr:`~newton.ModelBuilder.bound_mass` validator only
+        floors *positive* masses below the bound -- zero is treated as "static
+        body". The MuJoCo solver requires positive mass for any body with a
+        non-fixed joint, so we explicitly fix those here before finalize.
+        """
+        from newton import JointType
+
+        builder = cls._builder
+        if builder is None or len(builder.body_mass) == 0:
+            return
+
+        # Identify bodies that have a non-fixed joint as parent (i.e. moving bodies).
+        moving_bodies: set[int] = set()
+        for j in range(len(builder.joint_type)):
+            if builder.joint_type[j] == JointType.FIXED:
+                continue
+            child = builder.joint_child[j]
+            if child >= 0:
+                moving_bodies.add(child)
+
+        epsilon_mass = 1e-6
+        epsilon_inertia = 1e-9
+        num_fixed = 0
+        for b in moving_bodies:
+            if builder.body_mass[b] <= 0.0:
+                builder.body_mass[b] = epsilon_mass
+                builder.body_inv_mass[b] = 1.0 / epsilon_mass
+                builder.body_inertia[b] = wp.mat33(
+                    epsilon_inertia, 0.0, 0.0,
+                    0.0, epsilon_inertia, 0.0,
+                    0.0, 0.0, epsilon_inertia,
+                )
+                builder.body_inv_inertia[b] = wp.mat33(
+                    1.0 / epsilon_inertia, 0.0, 0.0,
+                    0.0, 1.0 / epsilon_inertia, 0.0,
+                    0.0, 0.0, 1.0 / epsilon_inertia,
+                )
+                num_fixed += 1
+        if num_fixed > 0:
+            logger.warning(
+                f"Set tiny mass ({epsilon_mass}) on {num_fixed} zero-mass moving body(ies). "
+                f"This is required for the MuJoCo solver."
+            )
 
     @classmethod
     def _initialize_contacts(cls) -> None:
