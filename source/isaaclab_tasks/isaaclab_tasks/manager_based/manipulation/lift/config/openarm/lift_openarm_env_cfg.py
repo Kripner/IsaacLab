@@ -52,14 +52,16 @@ class LiftPhysicsCfg(PresetCfg):
     )
     newton: NewtonCfg = NewtonCfg(
         solver_cfg=MJWarpSolverCfg(
-            njmax=100,
-            nconmax=100,
+            njmax=200,
+            nconmax=200,
             cone="pyramidal",
             integrator="implicitfast",
             impratio=1,
             ccd_iterations=500,
+            iterations=200,
+            ls_iterations=100,
         ),
-        num_substeps=1,
+        num_substeps=4,
         debug_mode=False,
     )
 
