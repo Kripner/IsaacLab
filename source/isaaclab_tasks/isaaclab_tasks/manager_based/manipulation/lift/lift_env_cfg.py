@@ -52,6 +52,7 @@ class LiftPhysicsCfg(PresetCfg):
             cone="pyramidal",
             integrator="implicitfast",
             impratio=1,
+            ccd_iterations=500,
         ),
         num_substeps=1,
         debug_mode=False,
