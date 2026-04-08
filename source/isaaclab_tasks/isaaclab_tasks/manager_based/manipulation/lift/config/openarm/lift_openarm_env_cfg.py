@@ -26,7 +26,7 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import FrameTransformerCfg
-from isaaclab.sim import CollisionPropertiesCfg, RigidBodyPropertiesCfg
+from isaaclab.sim import CollisionPropertiesCfg, RigidBodyPropertiesCfg, SimulationCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
@@ -37,32 +37,55 @@ from ... import mdp
 
 
 @configclass
-class LiftPhysicsCfg(PresetCfg):
-    default: PhysxCfg = PhysxCfg(
-        bounce_threshold_velocity=0.01,
-        gpu_found_lost_aggregate_pairs_capacity=1024 * 1024 * 4,
-        gpu_total_aggregate_pairs_capacity=16 * 1024,
-        friction_correlation_distance=0.00625,
-    )
-    physx: PhysxCfg = PhysxCfg(
-        bounce_threshold_velocity=0.01,
-        gpu_found_lost_aggregate_pairs_capacity=1024 * 1024 * 4,
-        gpu_total_aggregate_pairs_capacity=16 * 1024,
-        friction_correlation_distance=0.00625,
-    )
-    newton: NewtonCfg = NewtonCfg(
-        solver_cfg=MJWarpSolverCfg(
-            njmax=200,
-            nconmax=200,
-            cone="pyramidal",
-            integrator="implicitfast",
-            impratio=1,
-            ccd_iterations=500,
-            iterations=200,
-            ls_iterations=100,
+class LiftSimCfg(PresetCfg):
+    """Simulation configuration presets for the lift environment.
+
+    Wraps the full :class:`~isaaclab.sim.SimulationCfg` so that Newton can run
+    at a finer physics timestep (1/300 s, ~3x finer than PhysX) while PhysX
+    keeps its default (1/100 s). The smaller dt is needed for stable
+    gripper-cube contact under the MuJoCo solver.
+    """
+
+    default: SimulationCfg = SimulationCfg(
+        dt=1 / 100,
+        render_interval=2,
+        physics=PhysxCfg(
+            bounce_threshold_velocity=0.01,
+            gpu_found_lost_aggregate_pairs_capacity=1024 * 1024 * 4,
+            gpu_total_aggregate_pairs_capacity=16 * 1024,
+            friction_correlation_distance=0.00625,
         ),
-        num_substeps=2,
-        debug_mode=False,
+    )
+    physx: SimulationCfg = SimulationCfg(
+        dt=1 / 100,
+        render_interval=2,
+        physics=PhysxCfg(
+            bounce_threshold_velocity=0.01,
+            gpu_found_lost_aggregate_pairs_capacity=1024 * 1024 * 4,
+            gpu_total_aggregate_pairs_capacity=16 * 1024,
+            friction_correlation_distance=0.00625,
+        ),
+    )
+    newton: SimulationCfg = SimulationCfg(
+        dt=1 / 100,
+        render_interval=2,
+        physics=NewtonCfg(
+            solver_cfg=MJWarpSolverCfg(
+                njmax=200,
+                nconmax=200,
+                cone="pyramidal",
+                integrator="implicitfast",
+                impratio=1,
+                ccd_iterations=500,
+                iterations=200,
+                ls_iterations=100,
+            ),
+            # Internally subdivide each physics step into 3 substeps so the
+            # MuJoCo solver sees an effective dt of 1/300 s. This matches the
+            # cabinet preset's strategy without changing the policy timestep.
+            num_substeps=3,
+            debug_mode=False,
+        ),
     )
 
 
@@ -284,8 +307,6 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
         # general settings
         self.decimation = 2
         self.episode_length_s = 5.0
-        # simulation settings
-        self.sim.dt = 0.01  # 100Hz
-        self.sim.render_interval = self.decimation
-
-        self.sim.physics = LiftPhysicsCfg()
+        # simulation settings: wrap full SimulationCfg as a preset so that
+        # Newton can use a finer dt than PhysX (needed for stable contact).
+        self.sim = LiftSimCfg()
