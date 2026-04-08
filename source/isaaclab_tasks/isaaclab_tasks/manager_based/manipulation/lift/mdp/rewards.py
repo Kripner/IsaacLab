@@ -19,12 +19,47 @@ if TYPE_CHECKING:
     from isaaclab.sensors import FrameTransformer
 
 
-def object_is_lifted(
-    env: ManagerBasedRLEnv, minimal_height: float, object_cfg: SceneEntityCfg = SceneEntityCfg("object")
+def _object_held_mask(
+    env: ManagerBasedRLEnv,
+    minimal_height: float,
+    grip_distance: float,
+    object_cfg: SceneEntityCfg,
+    ee_frame_cfg: SceneEntityCfg,
 ) -> torch.Tensor:
-    """Reward the agent for lifting the object above the minimal height."""
+    """Boolean mask: object is above ``minimal_height`` AND end-effector is
+    within ``grip_distance`` of the object.
+
+    This prevents reward hacking by throwing the object: a thrown cube is
+    "lifted" but not "held", so the bonus stops the moment it leaves the
+    gripper.
+    """
     object: RigidObject = env.scene[object_cfg.name]
-    return torch.where(wp.to_torch(object.data.root_pos_w)[:, 2] > minimal_height, 1.0, 0.0)
+    ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+    cube_pos_w = wp.to_torch(object.data.root_pos_w)
+    ee_w = wp.to_torch(ee_frame.data.target_pos_w)[..., 0, :]
+    is_lifted = cube_pos_w[:, 2] > minimal_height
+    is_held = torch.linalg.norm(cube_pos_w - ee_w, dim=1) < grip_distance
+    return is_lifted & is_held
+
+
+def object_is_lifted(
+    env: ManagerBasedRLEnv,
+    minimal_height: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+    grip_distance: float = 0.06,
+) -> torch.Tensor:
+    """Reward the agent for lifting the object above the minimal height while
+    holding it with the gripper.
+
+    The bonus is only given when the end-effector is within ``grip_distance``
+    of the object. Without this gating the agent learns to throw the cube
+    instead of grip-and-lift, since a thrown cube farms the lift bonus while
+    airborne.
+    """
+    return _object_held_mask(
+        env, minimal_height, grip_distance, object_cfg, ee_frame_cfg
+    ).float()
 
 
 def object_ee_distance(
@@ -54,8 +89,16 @@ def object_goal_distance(
     command_name: str,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+    grip_distance: float = 0.06,
 ) -> torch.Tensor:
-    """Reward the agent for tracking the goal pose using tanh-kernel."""
+    """Reward the agent for tracking the goal pose using tanh-kernel.
+
+    Gated on the gripper actually holding the object (cube above
+    ``minimal_height`` AND end-effector within ``grip_distance``). Without
+    this gating, a thrown cube passing through the goal region farms partial
+    credit, encouraging throwing instead of placement.
+    """
     # extract the used quantities (to enable type-hinting)
     robot: RigidObject = env.scene[robot_cfg.name]
     object: RigidObject = env.scene[object_cfg.name]
@@ -68,5 +111,6 @@ def object_goal_distance(
     # distance of the end-effector to the object: (num_envs,)
     object_pos_w = wp.to_torch(object.data.root_pos_w)
     distance = torch.linalg.norm(des_pos_w - object_pos_w, dim=1)
-    # rewarded if the object is lifted above the threshold
-    return (object_pos_w[:, 2] > minimal_height) * (1 - torch.tanh(distance / std))
+    # rewarded only when the gripper actually holds the object
+    held = _object_held_mask(env, minimal_height, grip_distance, object_cfg, ee_frame_cfg)
+    return held.float() * (1 - torch.tanh(distance / std))
