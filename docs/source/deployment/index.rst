@@ -60,6 +60,15 @@ After cloning, you can choose the deployment workflow that fits your needs:
   - Includes tested workflows for ETH Zurich's Euler cluster and IIT Genoa's Franklin cluster,
     with notes on adapting to other environments.
 
+- :doc:`newton_container` *(fork-specific)*
+
+  - Documents the lightweight, Newton-only image published to
+    ``ghcr.io/kripner/isaac-lab-newton`` from this fork.
+  - Lists the fork's changes on top of upstream ``develop`` (Newton presets
+    for lift / stack tasks, engine-level mass fix, cross-cutting fixes).
+  - Includes Docker and Apptainer / SLURM usage examples for headless RL
+    training without Isaac Sim.
+
 .. toctree::
    :maxdepth: 1
    :hidden:
@@ -67,3 +76,4 @@ After cloning, you can choose the deployment workflow that fits your needs:
    docker
    run_docker_example
    cluster
+   newton_container
